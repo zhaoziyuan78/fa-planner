@@ -1,0 +1,9 @@
+/viz/
+/tokens/
+/data/
+/eval/
+/models/
+*.png
+Instruction.md
+Update.md
+/scripts/__pycache__/

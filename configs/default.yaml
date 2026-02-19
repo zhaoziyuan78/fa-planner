@@ -1,0 +1,53 @@
+tokenizer:
+  type: vqvae
+  image_size: 64
+  latent_grid: [8, 8]
+  codebook_size: 512
+  latent_dim: 128
+
+env:
+  dt: 0.1
+  T: 100
+  gamma: 0.90
+  v_max: 1.0
+  a_max: 1.0
+  w_max: 0.6
+  k_max: 0.015
+  bounce_beta: 0.5
+  success_radius: 0.08
+  region_count: 4
+  region_w_scale: 0.6
+  region_colors:
+    - [60, 70, 80]
+    - [70, 80, 70]
+    - [80, 70, 60]
+    - [70, 60, 80]
+
+data:
+  D_action_episodes: 50000
+  D_state_episodes: 50000
+  D_align_sweep: [50, 100, 200, 500, 1000, 2000]
+  test_episodes: 1000
+
+state_prior:
+  L: 16
+  d_model: 512
+  n_layers: 8
+  n_heads: 8
+  d_ff: 2048
+  dropout: 0.1
+
+action_prior:
+  L: 16
+  action_bins: 21
+  action_vocab: 441
+  d_model: 512
+  n_layers: 8
+  n_heads: 8
+  d_ff: 2048
+  dropout: 0.1
+
+adapter:
+  prefix_len_P: 16
+  mlp_hidden: 1024
+  kl_lambda: 0.0
