@@ -1,9 +1,0 @@
-/viz/
-/tokens/
-/data/
-/eval/
-/models/
-*.png
-Instruction.md
-Update.md
-**/__pycache__/
