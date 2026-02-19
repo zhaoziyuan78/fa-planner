@@ -6,4 +6,4 @@
 *.png
 Instruction.md
 Update.md
-/scripts/__pycache__/
+**/__pycache__/
