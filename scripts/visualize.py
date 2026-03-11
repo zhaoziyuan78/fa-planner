@@ -57,6 +57,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval", type=str, required=True)
     parser.add_argument("--out", type=str, required=True)
+    parser.add_argument("--label", type=str, default="")
     parser.add_argument("--num", type=int, default=20)
     parser.add_argument("--index", type=int, default=0)
     args = parser.parse_args()
@@ -65,9 +66,17 @@ def main():
     results = data["results"]
 
     os.makedirs(args.out, exist_ok=True)
-    plot_trajectories(results, os.path.join(args.out, "trajectories.png"), num=args.num)
-    plot_timeseries(results[args.index], os.path.join(args.out, "timeseries.png"))
-    render_gif(results[args.index], os.path.join(args.out, "rollout.gif"))
+    if args.label:
+        traj_name = f"trajectories_{args.label}.png"
+        ts_name = f"timeseries_{args.label}.png"
+        gif_name = f"rollout_{args.label}.gif"
+    else:
+        traj_name = "trajectories.png"
+        ts_name = "timeseries.png"
+        gif_name = "rollout.gif"
+    plot_trajectories(results, os.path.join(args.out, traj_name), num=args.num)
+    plot_timeseries(results[args.index], os.path.join(args.out, ts_name))
+    render_gif(results[args.index], os.path.join(args.out, gif_name))
 
 
 if __name__ == "__main__":

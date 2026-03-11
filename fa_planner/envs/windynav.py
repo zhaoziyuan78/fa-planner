@@ -15,6 +15,9 @@ class WindyNavEnv:
         self.success_radius = cfg["success_radius"]
         self.size = cfg.get("image_size", 64)
         self.ego_crop = cfg.get("ego_crop", 32)
+        self.edge_margin = cfg.get("edge_margin", 0.08)
+        self.grid_spacing_px = cfg.get("grid_spacing_px", 4)
+        self.grid_width = cfg.get("grid_width", 1)
         self.region_count = cfg.get("region_count", 4)
         self.region_w_scale = cfg.get("region_w_scale", 0.6)
         self.region_colors = cfg.get(
@@ -34,14 +37,30 @@ class WindyNavEnv:
         self.region_k = None
         self.t = 0
 
-    def reset(self, seed=None, goal=None, wind=None):
+    def reset(self, seed=None, goal=None, wind=None, start_mode="edge", goal_mode="edge"):
         if seed is not None:
             np.random.seed(seed)
-        pos = np.random.uniform(-0.8, 0.8, size=(2,))
+        if start_mode == "edge":
+            pos = np.array(
+                [np.random.uniform(-0.8, 0.8), 1.0 - self.edge_margin],
+                dtype=np.float32,
+            )
+        elif start_mode == "random":
+            pos = np.random.uniform(-0.8, 0.8, size=(2,)).astype(np.float32)
+        else:
+            raise ValueError("Unknown start_mode")
         vel = np.zeros(2, dtype=np.float32)
         self.state = np.concatenate([pos, vel]).astype(np.float32)
         if goal is None:
-            self.goal = np.random.uniform(-0.8, 0.8, size=(2,)).astype(np.float32)
+            if goal_mode == "edge":
+                self.goal = np.array(
+                    [np.random.uniform(-0.8, 0.8), -1.0 + self.edge_margin],
+                    dtype=np.float32,
+                )
+            elif goal_mode == "random":
+                self.goal = np.random.uniform(-0.8, 0.8, size=(2,)).astype(np.float32)
+            else:
+                raise ValueError("Unknown goal_mode")
         else:
             self.goal = np.array(goal, dtype=np.float32)
         if wind is None:
@@ -109,6 +128,8 @@ class WindyNavEnv:
             velocity=(vx, vy),
             show_goal=show_goal,
             region_colors=self.region_colors,
+            grid_spacing_px=self.grid_spacing_px,
+            grid_width=self.grid_width,
         )
         return frame
 

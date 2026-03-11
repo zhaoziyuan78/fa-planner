@@ -11,6 +11,6 @@ class StateOnlyPolicy(nn.Module):
             nn.ReLU(),
             nn.Linear(d_model, action_vocab),
         )
-
+### TODO: See goal
     def forward(self, state_summary):
         return self.head(state_summary)

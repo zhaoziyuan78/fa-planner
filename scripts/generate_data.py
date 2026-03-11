@@ -12,12 +12,6 @@ from fa_planner.envs.windynav import WindyNavEnv
 from fa_planner.utils.config import load_config
 
 
-def line_tracking_controller(v, direction, speed, a_max, kp=2.0):
-    desired_v = speed * direction
-    a = kp * (desired_v - v)
-    return np.clip(a, -a_max, a_max)
-
-
 def expert_action(p, v, g, w, a_max, kp=2.0, kd=0.8, kw=1.0):
     a = kp * (g - p) + kd * (0 - v) - kw * w
     return np.clip(a, -a_max, a_max)
@@ -32,26 +26,31 @@ def rollout_episode(env, mode, seed=None):
 
     if mode == "action":
         env.reset(seed=seed, wind=(np.zeros(2, dtype=np.float32), np.zeros(2, dtype=np.float32)))
-        theta = np.random.uniform(0.0, 2.0 * np.pi)
-        direction = np.array([np.cos(theta), np.sin(theta)], dtype=np.float32)
-        speed = np.random.uniform(0.3, 0.8) * env.v_max
+        start = env.state[:2].copy()
+        goal = env.goal.copy()
+        direction = goal - start
+        norm = np.linalg.norm(direction)
+        if norm < 1e-6:
+            direction = np.array([1.0, 0.0], dtype=np.float32)
+        else:
+            direction = direction / norm
+        a_const = np.clip(env.a_max * direction, -env.a_max, env.a_max)
         for t in range(env.T):
             world = env.render_world(show_goal=True)
             ego = env.render_ego(world)
-            v = env.state[2:4]
-            a = line_tracking_controller(v, direction, speed, env.a_max)
-            state, _, done, info = env.step(a)
+            a = a_const
+            state, success, done, info = env.step(a)
             world_frames.append(world)
             ego_frames.append(ego)
             actions.append(a)
             sim_state.append(state)
             wind.append(info["wind"])
-            if done:
+            if success:
                 break
         return world_frames, ego_frames, actions, sim_state, wind, env.goal
 
     if mode == "state":
-        env.reset(seed=seed)
+        env.reset(seed=seed, start_mode="random")
         for t in range(env.T):
             world = env.render_world(show_goal=True)
             ego = env.render_ego(world)

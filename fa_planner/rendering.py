@@ -41,7 +41,7 @@ def draw_arrow(draw, start, vec, color, scale=10.0):
     draw.line([ex, ey, right[0], right[1]], fill=color, width=1)
 
 
-def draw_v_marker(draw, center, direction, length=8.0, width=6.0, color=(220, 120, 90), line_width=1):
+def draw_v_marker(draw, center, direction, length=8.0, width=6.0, color=(220, 120, 90), line_width=2):
     dx, dy = direction
     norm = math.hypot(dx, dy)
     if norm < 1e-6:
@@ -60,6 +60,15 @@ def draw_v_marker(draw, center, direction, length=8.0, width=6.0, color=(220, 12
     draw.line([tip, right], fill=color, width=line_width)
 
 
+def draw_grid(draw, size, spacing, color, width):
+    if spacing <= 0:
+        return
+    for x in range(0, size, spacing):
+        draw.line([x, 0, x, size - 1], fill=color, width=width)
+    for y in range(0, size, spacing):
+        draw.line([0, y, size - 1, y], fill=color, width=width)
+
+
 def render_world_frame(
     size,
     agent_pos,
@@ -70,6 +79,9 @@ def render_world_frame(
     agent_color=(220, 120, 90),
     goal_color=(90, 170, 120),
     boundary_color=(170, 170, 170),
+    grid_spacing_px=4,
+    grid_width=1,
+    grid_color=(40, 40, 40),
 ):
     if region_colors:
         img = Image.new("RGB", (size, size))
@@ -82,6 +94,7 @@ def render_world_frame(
     else:
         img = Image.new("RGB", (size, size), (0, 0, 0))
     draw = ImageDraw.Draw(img)
+    draw_grid(draw, size, grid_spacing_px, grid_color, grid_width)
     # boundary
     draw.rectangle([0, 0, size - 1, size - 1], outline=boundary_color, width=1)
     # goal
@@ -92,7 +105,7 @@ def render_world_frame(
     agent_px = world_to_pixel(agent_pos, size)
     vx, vy = velocity
     direction = (vx, -vy)
-    draw_v_marker(draw, agent_px, direction, length=8.0, width=6.0, color=agent_color, line_width=1)
+    draw_v_marker(draw, agent_px, direction, length=8.0, width=6.0, color=agent_color, line_width=2)
     return np.array(img, dtype=np.uint8)
 
 

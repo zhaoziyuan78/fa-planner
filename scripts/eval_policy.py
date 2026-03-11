@@ -13,11 +13,40 @@ from fa_planner.models.vqvae import VQVAE
 from fa_planner.models.state_prior import StatePrior
 from fa_planner.models.action_prior import ActionPrior
 from fa_planner.models.adapter import Adapter
+from fa_planner.models.line_adapter import LineAdapter
 from fa_planner.models.scratch_policy import ScratchPolicy
 from fa_planner.models.state_only import StateOnlyPolicy
 from fa_planner.utils.config import load_config
 from fa_planner.utils.action import action_token_to_continuous
 from fa_planner.utils.vision import image_to_tensor
+
+
+def stopping_distance(v, a_max, gamma, dt):
+    dist = 0.0
+    v_curr = max(v, 0.0)
+    while v_curr > 1e-4:
+        v_curr = gamma * v_curr - a_max * dt
+        if v_curr < 0.0:
+            v_curr = 0.0
+        dist += v_curr * dt
+    return dist
+
+
+def line_to_goal_action(p, v, goal, direction, a_max, v_max, gamma, dt):
+    remaining = float(np.dot(goal - p, direction))
+    v_par = float(np.dot(v, direction))
+    if remaining <= 0.0:
+        if abs(v_par) < 1e-3:
+            a_par = 0.0
+        else:
+            a_par = -np.sign(v_par) * a_max
+    else:
+        stop_dist = stopping_distance(v_par, a_max, gamma, dt)
+        if stop_dist >= remaining:
+            a_par = -a_max
+        else:
+            a_par = a_max
+    return np.clip(a_par * direction, -a_max, a_max)
 
 
 def discretize_action(action, bins, a_max):
@@ -41,6 +70,8 @@ def run_episode(env, vqvae, model_bundle, cfg, device, model_type):
     action_bins = cfg["action_prior"]["action_bins"]
     a_max = cfg["env"]["a_max"]
     codebook = cfg["tokenizer"]["codebook_size"]
+    mid = action_bins // 2
+    zero_action_id = mid * action_bins + mid
 
     world_tokens = []
     ego_tokens = []
@@ -52,6 +83,7 @@ def run_episode(env, vqvae, model_bundle, cfg, device, model_type):
 
     env.reset()
 
+    start_pos = env.state[:2].copy()
     for t in range(env.T):
         world = env.render_world(show_goal=True)
         ego = env.render_ego(world)
@@ -75,7 +107,7 @@ def run_episode(env, vqvae, model_bundle, cfg, device, model_type):
             world_seq = world_tokens[-L:]
             ego_seq = ego_tokens[-L:]
         if len(action_tokens) < L - 1:
-            pad_actions = [0] * (L - 1 - len(action_tokens)) + action_tokens
+            pad_actions = [zero_action_id] * (L - 1 - len(action_tokens)) + action_tokens
         else:
             pad_actions = action_tokens[-(L - 1):]
 
@@ -94,7 +126,7 @@ def run_episode(env, vqvae, model_bundle, cfg, device, model_type):
             logits, _ = model_bundle["action"](seq.unsqueeze(0).to(device))
             action_logits = logits[:, -1, codebook:]
             action_id = torch.argmax(action_logits, dim=-1).item()
-        else:
+        elif model_type == "full":
             tokens = torch.from_numpy(np.stack(world_seq, axis=0)).unsqueeze(0).to(device)
             summary = model_bundle["state"].hidden_summary(tokens)
             goal = torch.from_numpy(env.goal).unsqueeze(0).to(device)
@@ -102,6 +134,22 @@ def run_episode(env, vqvae, model_bundle, cfg, device, model_type):
             logits, hidden = model_bundle["action"](seq.unsqueeze(0).to(device))
             action_summary = hidden[:, -1, :]
             adapter_logits = model_bundle["adapter"](summary, action_summary, goal)
+            action_id = torch.argmax(adapter_logits, dim=-1).item()
+        else:
+            tokens = torch.from_numpy(np.stack(world_seq, axis=0)).unsqueeze(0).to(device)
+            summary = model_bundle["state"].hidden_summary(tokens)
+            goal = torch.from_numpy(env.goal).unsqueeze(0).to(device)
+            direction = env.goal - start_pos
+            norm = np.linalg.norm(direction)
+            if norm < 1e-6:
+                direction = np.array([1.0, 0.0], dtype=np.float32)
+            else:
+                direction = direction / norm
+            action_hint = line_to_goal_action(
+                env.state[:2], env.state[2:4], env.goal, direction, a_max, env.v_max, env.gamma, env.dt
+            )
+            action_hint = torch.from_numpy(action_hint.astype(np.float32)).unsqueeze(0).to(device)
+            adapter_logits = model_bundle["line_adapter"](summary, action_hint, goal)
             action_id = torch.argmax(adapter_logits, dim=-1).item()
 
         action_id = int(np.clip(action_id, 0, action_bins * action_bins - 1))
@@ -125,12 +173,13 @@ def run_episode(env, vqvae, model_bundle, cfg, device, model_type):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/default.yaml")
-    parser.add_argument("--model", type=str, choices=["full", "scratch", "action_only", "state_only"], required=True)
+    parser.add_argument("--model", type=str, choices=["full", "scratch", "action_only", "state_only", "line_adapter"], required=True)
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--vqvae", type=str, required=True)
     parser.add_argument("--state", type=str)
     parser.add_argument("--action", type=str)
     parser.add_argument("--adapter", type=str)
+    parser.add_argument("--line_adapter", type=str)
     parser.add_argument("--scratch", type=str)
     parser.add_argument("--state_only", type=str)
     parser.add_argument("--out", type=str, required=True)
@@ -153,7 +202,7 @@ def main():
     vqvae.eval()
 
     model_bundle = {}
-    if args.model in ["full", "state_only"]:
+    if args.model in ["full", "state_only", "line_adapter"]:
         state_prior = StatePrior(
             vocab_size=cfg["tokenizer"]["codebook_size"],
             d_model=cfg["state_prior"]["d_model"],
@@ -175,6 +224,7 @@ def main():
         max_seq_len = pos_len if pos_len >= needed_len else needed_len
         action_prior = ActionPrior(
             vocab_size=cfg["tokenizer"]["codebook_size"] + cfg["action_prior"]["action_vocab"],
+            codebook_size=cfg["tokenizer"]["codebook_size"],
             d_model=cfg["action_prior"]["d_model"],
             n_layers=cfg["action_prior"]["n_layers"],
             n_heads=cfg["action_prior"]["n_heads"],
@@ -189,7 +239,22 @@ def main():
             if max_seq_len > pos_len:
                 new_weight[copy_len:] = pos_weight[-1:].repeat(max_seq_len - copy_len, 1)
             action_state["pos_embed.weight"] = new_weight
-        action_prior.load_state_dict(action_state)
+        time_weight = action_state.get("time_embed.weight")
+        if time_weight is not None:
+            target_steps = max_seq_len // action_prior.step_size + 2
+            time_len = time_weight.shape[0]
+            if time_len != target_steps:
+                new_weight = time_weight.new_empty((target_steps, time_weight.shape[1]))
+                copy_len = min(time_len, target_steps)
+                new_weight[:copy_len] = time_weight[:copy_len]
+                if target_steps > time_len:
+                    new_weight[copy_len:] = time_weight[-1:].repeat(target_steps - copy_len, 1)
+                action_state["time_embed.weight"] = new_weight
+        strict = all(
+            key in action_state
+            for key in ["type_embed.weight", "time_embed.weight", "slot_embed.weight"]
+        )
+        action_prior.load_state_dict(action_state, strict=strict)
         action_prior.eval()
         model_bundle["action"] = action_prior
 
@@ -202,6 +267,15 @@ def main():
         adapter.load_state_dict(torch.load(args.adapter, map_location=args.device))
         adapter.eval()
         model_bundle["adapter"] = adapter
+    if args.model == "line_adapter":
+        line_adapter = LineAdapter(
+            d_model=cfg["state_prior"]["d_model"],
+            action_vocab=cfg["action_prior"]["action_vocab"],
+            hidden=cfg["adapter"]["mlp_hidden"] * 2,
+        ).to(args.device)
+        line_adapter.load_state_dict(torch.load(args.line_adapter, map_location=args.device))
+        line_adapter.eval()
+        model_bundle["line_adapter"] = line_adapter
 
     if args.model == "scratch":
         scratch = ScratchPolicy(

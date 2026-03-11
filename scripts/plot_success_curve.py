@@ -27,7 +27,8 @@ def load_distance_and_success(eval_path, success_radius):
         dist = pad_to_length(dist, max_len)
         dist_mat[i] = dist
     mean_dist = dist_mat.mean(axis=0)
-    success_rate = (dist_mat <= success_radius).mean(axis=0)
+    success_mask = dist_mat <= success_radius
+    success_rate = np.maximum.accumulate(success_mask, axis=1).mean(axis=0)
     return mean_dist, success_rate
 
 
@@ -44,6 +45,7 @@ def main():
     parser.add_argument("--action_only", type=str, required=True)
     parser.add_argument("--state_only", type=str, required=True)
     parser.add_argument("--scratch", type=str, required=True)
+    parser.add_argument("--line_adapter", type=str)
     parser.add_argument("--out", type=str, required=True)
     parser.add_argument("--success_radius", type=float, default=0.08)
     args = parser.parse_args()
@@ -55,6 +57,9 @@ def main():
         "state_only": args.state_only,
         "scratch": args.scratch,
     }
+    if args.line_adapter:
+        labels.append("line_adapter")
+        paths["line_adapter"] = args.line_adapter
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     color_map = {label: colors[i % len(colors)] for i, label in enumerate(labels)}
 

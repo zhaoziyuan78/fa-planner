@@ -75,9 +75,9 @@ def main():
     parser.add_argument("--state", type=str, required=True)
     parser.add_argument("--action", type=str, required=True)
     parser.add_argument("--out", type=str, required=True)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--epochs", type=int, default=40)
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -113,6 +113,7 @@ def main():
     max_seq_len = pos_len if pos_len >= needed_len else needed_len
     action_prior = ActionPrior(
         vocab_size=codebook_size + action_vocab,
+        codebook_size=codebook_size,
         d_model=cfg["action_prior"]["d_model"],
         n_layers=cfg["action_prior"]["n_layers"],
         n_heads=cfg["action_prior"]["n_heads"],
@@ -127,7 +128,22 @@ def main():
         if max_seq_len > pos_len:
             new_weight[copy_len:] = pos_weight[-1:].repeat(max_seq_len - copy_len, 1)
         action_state["pos_embed.weight"] = new_weight
-    action_prior.load_state_dict(action_state)
+    time_weight = action_state.get("time_embed.weight")
+    if time_weight is not None:
+        target_steps = max_seq_len // action_prior.step_size + 2
+        time_len = time_weight.shape[0]
+        if time_len != target_steps:
+            new_weight = time_weight.new_empty((target_steps, time_weight.shape[1]))
+            copy_len = min(time_len, target_steps)
+            new_weight[:copy_len] = time_weight[:copy_len]
+            if target_steps > time_len:
+                new_weight[copy_len:] = time_weight[-1:].repeat(target_steps - copy_len, 1)
+            action_state["time_embed.weight"] = new_weight
+    strict = all(
+        key in action_state
+        for key in ["type_embed.weight", "time_embed.weight", "slot_embed.weight"]
+    )
+    action_prior.load_state_dict(action_state, strict=strict)
     action_prior.eval()
     for p in action_prior.parameters():
         p.requires_grad = False
@@ -139,6 +155,7 @@ def main():
     ).to(args.device)
 
     optim = torch.optim.Adam(adapter.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=args.epochs)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
 
     losses = []
@@ -181,6 +198,7 @@ def main():
         avg_loss = total_loss / max(1, len(loader))
         losses.append(avg_loss)
         print(f"Epoch {epoch+1}/{args.epochs} loss={avg_loss:.4f}")
+        scheduler.step()
 
     torch.save(adapter.state_dict(), args.out)
     out_dir = os.path.dirname(args.out)

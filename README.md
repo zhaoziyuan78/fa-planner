@@ -20,7 +20,7 @@ pip install -r requirements.txt
 ```bash
 python scripts/generate_data.py --config configs/default.yaml --mode action --episodes 50000 --out data/D_action
 python scripts/generate_data.py --config configs/default.yaml --mode state --episodes 50000 --out data/D_state
-python scripts/generate_data.py --config configs/default.yaml --mode align --episodes 1000  --out data/D_align
+python scripts/generate_data.py --config configs/default.yaml --mode align --episodes 5000  --out data/D_align
 ```
 
 ## Train VQ-VAE tokenizer
@@ -54,6 +54,13 @@ python scripts/train_adapter.py \
   --out models/adapter.pt
 ```
 
+```bash
+python scripts/train_line_adapter.py \
+  --data tokens/D_align \
+  --state models/state_prior.pt \
+  --out models/line_adapter.pt
+```
+
 ## Baselines
 
 ```bash
@@ -67,6 +74,15 @@ python scripts/train_state_only.py --data tokens/D_align --state models/state_pr
 python scripts/eval_policy.py --model full --episodes 100 \
   --vqvae models/vqvae.pt --state models/state_prior.pt --action models/action_prior.pt --adapter models/adapter.pt \
   --out eval/full
+
+python scripts/eval_policy.py \
+  --model line_adapter \
+  --episodes 100 \
+  --vqvae models/vqvae.pt \
+  --state models/state_prior.pt \
+  --line_adapter models/line_adapter.pt \
+  --out eval/line_adapter
+
 ```
 
 Baselines:
@@ -84,6 +100,7 @@ python scripts/eval_policy.py --model state_only --episodes 100 \
 
 ```bash
 python scripts/visualize.py --eval eval/full/eval_full.npz --out viz/full --num 20 --index 0
+python scripts/visualize.py --eval eval/line_adapter/eval_line_adapter.npz --out viz/line_adapter --num 20 --index 0
 python scripts/visualize.py --eval eval/scratch/eval_scratch.npz --out viz/scratch --num 20 --index 0
 python scripts/visualize.py --eval eval/action_only/eval_action_only.npz --out viz/action_only --num 20 --index 0
 python scripts/visualize.py --eval eval/state_only/eval_state_only.npz --out viz/state_only --num 20 --index 0
@@ -99,8 +116,8 @@ python scripts/plot_success_curve.py \
   --action_only eval/action_only/eval_action_only.npz \
   --state_only eval/state_only/eval_state_only.npz \
   --scratch eval/scratch/eval_scratch.npz \
-  --out distance_curve.png \
-  --success_radius 0.08
+  --line_adapter eval/line_adapter/eval_line_adapter.npz \
+  --out distance_curve.png
 ```
 
 ## Notes

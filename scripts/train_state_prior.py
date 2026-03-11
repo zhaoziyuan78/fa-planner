@@ -44,7 +44,7 @@ def main():
     parser.add_argument("--data", type=str, required=True)
     parser.add_argument("--out", type=str, required=True)
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()

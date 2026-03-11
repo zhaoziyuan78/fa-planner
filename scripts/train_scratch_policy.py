@@ -53,9 +53,9 @@ def main():
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     parser.add_argument("--data", type=str, required=True)
     parser.add_argument("--out", type=str, required=True)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--epochs", type=int, default=40)
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -79,6 +79,7 @@ def main():
     ).to(args.device)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=args.epochs)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
 
     for epoch in range(args.epochs):
@@ -96,6 +97,7 @@ def main():
             total_loss += loss.item()
         avg_loss = total_loss / max(1, len(loader))
         print(f"Epoch {epoch+1}/{args.epochs} loss={avg_loss:.4f}")
+        scheduler.step()
 
     torch.save(model.state_dict(), args.out)
     print(f"Saved ScratchPolicy to {args.out}")
